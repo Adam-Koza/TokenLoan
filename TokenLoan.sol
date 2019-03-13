@@ -1,4 +1,4 @@
-pragma solidity 0.5.0;
+pragma solidity 0.6.0;
 
 // ----------------------------------------------------------------------------
 // Safe maths
@@ -68,7 +68,7 @@ contract TokenLoan {
     }
 
     modifier OnlyCollateralContract {
-        require(validDCC[msg.sender], "You are not a valid Collateral Contract.");
+        require(validCC[msg.sender], "You are not a valid Collateral Contract.");
         _;
     }
 
@@ -129,18 +129,19 @@ contract Collateral {
 
     modifier onlyTokenLoan {
         require(msg.sender == tokenLoanContract, "You are not the TokenLoan Contract.");
+        _;
     }
 
 
-    constructor (uint[] _tokens, address _user, address _TokenLoanContract) {
+    constructor (uint[] memory _tokens, address payable _user, address _TokenLoanContract) public {
         user = _user;
-        for (i = 0; i < _tokens.length; i++) {
+        for (uint i = 0; i < _tokens.length; i++) {
             expectedTokens.push(_tokens[i]);
         }
     }
 
     function updateUserBalance() public {
-        for (i = 0; i < expectedTokens.length; i++) {
+        for (uint i = 0; i < expectedTokens.length; i++) {
             TokenLoan(tokenLoanContract).updateUserBalances(expectedTokens[i], 
                 ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this)), 
                 user);
@@ -148,7 +149,7 @@ contract Collateral {
     }
 
     function sendBack() public onlyTokenLoan {
-        for (i = 0; i < expectedTokens.length; i++) {
+        for (uint i = 0; i < expectedTokens.length; i++) {
             uint balance = ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
             if (balance > 0) {
                 ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).transfer(user, balance);
@@ -157,7 +158,7 @@ contract Collateral {
     }
 
     function sendAuctionWinner(address _winner) public onlyTokenLoan {
-        for (i = 0; i < expectedTokens.length; i++) {
+        for (uint i = 0; i < expectedTokens.length; i++) {
             uint balance = ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
             if (balance > 0) {
                 ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).transfer(_winner, balance);
