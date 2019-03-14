@@ -1,4 +1,4 @@
-pragma solidity 0.6.0;
+pragma solidity 0.5.6;
 
 // ----------------------------------------------------------------------------
 // Safe maths
@@ -75,30 +75,23 @@ contract TokenLoan {
     function addToken (address _tokenAddress, string memory _tokenName) public onlyOwner {
         acceptedTokens.push(_tokenAddress);
         tokenNames[acceptedTokens.length.sub(1)] = _tokenName;
+        bytes memory bytesName = bytes(_tokenName);
+        bytes32 key = keccak256(bytesName);
+        tokenIndexLookUp[key] = acceptedTokens.length.sub(1);
     } 
 
     function removeToken (uint _tokenIndex) public onlyOwner {
         removedTokens[_tokenIndex] = true;
     }
 
-    function stringToBytes32(string memory source) public pure returns (bytes32 result) {
-        bytes memory tempEmptyStringTest = bytes(source);
-        if (tempEmptyStringTest.length == 0) {
-            return 0x0;
-        }
-
-        assembly {
-            result := mload(add(source, 32))
-        }
-    }
-
     function lookUpTokenIndex (string memory _tokenName) public view returns(uint) {
-        bytes32 bytes32String = stringToBytes32(_tokenName);
-        return tokenIndexLookUp[bytes32String];
+        bytes memory bytesName = bytes(_tokenName);
+        bytes32 key = keccak256(bytesName);
+        return tokenIndexLookUp[key];
     }
 
     function updateAllTotalTokenBalances () public {
-        for (uint i = 0; i < acceptedTokens.length; i++) {
+        for (uint i = 0; i < acceptedTokens.length; i = i.add(1)) {
             if (!removedTokens[i]) {
                 totalTokenBalances[i] = ERC20Interface(acceptedTokens[i]).balanceOf(address(this));
             }
@@ -122,6 +115,7 @@ contract TokenLoan {
 // 
 // ----------------------------------------------------------------------------
 contract Collateral {
+    using SafeMath for uint;
 
     address payable user;
     address tokenLoanContract;
@@ -133,15 +127,16 @@ contract Collateral {
     }
 
 
-    constructor (uint[] memory _tokens, address payable _user, address _TokenLoanContract) public {
+    constructor (uint[] memory _tokens, address payable _user, address _tokenLoanContract) public {
         user = _user;
-        for (uint i = 0; i < _tokens.length; i++) {
+        tokenLoanContract = _tokenLoanContract;
+        for (uint i = 0; i < _tokens.length; i = i.add(1)) {
             expectedTokens.push(_tokens[i]);
         }
     }
 
     function updateUserBalance() public {
-        for (uint i = 0; i < expectedTokens.length; i++) {
+        for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
             TokenLoan(tokenLoanContract).updateUserBalances(expectedTokens[i], 
                 ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this)), 
                 user);
@@ -149,7 +144,7 @@ contract Collateral {
     }
 
     function sendBack() public onlyTokenLoan {
-        for (uint i = 0; i < expectedTokens.length; i++) {
+        for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
             uint balance = ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
             if (balance > 0) {
                 ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).transfer(user, balance);
@@ -158,7 +153,7 @@ contract Collateral {
     }
 
     function sendAuctionWinner(address _winner) public onlyTokenLoan {
-        for (uint i = 0; i < expectedTokens.length; i++) {
+        for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
             uint balance = ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
             if (balance > 0) {
                 ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).transfer(_winner, balance);
