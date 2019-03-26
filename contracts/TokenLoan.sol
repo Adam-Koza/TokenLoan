@@ -6,18 +6,18 @@ pragma solidity 0.5.6;
 library SafeMath {
     function add(uint a, uint b) internal pure returns (uint c) {
         c = a + b;
-        require(c >= a, "");
+        require(c >= a, "Overflow detected.");
     }
     function sub(uint a, uint b) internal pure returns (uint c) {
-        require(b <= a, "");
+        require(b <= a, "Underflow detected.");
         c = a - b;
     }
     function mul(uint a, uint b) internal pure returns (uint c) {
         c = a * b;
-        require(a == 0 || c / a == b, "");
+        require(a == 0 || c / a == b, "Overflow detected.");
     }
     function div(uint a, uint b) internal pure returns (uint c) {
-        require(b > 0, "");
+        require(b > 0, "Can't divide by zero.");
         c = a / b;
     }
 }
@@ -39,27 +39,21 @@ contract ERC20Interface {
 }
 
 // ----------------------------------------------------------------------------
-// TokenLoan Contract.
+// TokenLoan (Logic) Contract.
 // 
 // ----------------------------------------------------------------------------
 contract TokenLoan {
     using SafeMath for uint;
 
     address public owner;
+    address payable public storageContract;
+    TokenLoanStorage contractStorage;
 
-    address[] public acceptedTokens;
-    address[] collateralContracts;
-    mapping(address => bool) validCC;
-    mapping(uint => bool) removedTokens;
-    mapping(uint => string) tokenNames;
-    mapping(bytes32 => uint) tokenIndexLookUp;
-    mapping(uint => mapping(address => uint)) userTokenBalances;
-    mapping(uint => uint) totalTokenBalances;
 
-    
-
-    constructor () public {
+    constructor (address payable _storageContract) public {
         owner = msg.sender;
+        storageContract = _storageContract;
+        contractStorage = TokenLoanStorage(storageContract);
     }
 
     modifier onlyOwner {
@@ -68,42 +62,94 @@ contract TokenLoan {
     }
 
     modifier OnlyCollateralContract {
-        require(validCC[msg.sender], "You are not a valid Collateral Contract.");
+        require(contractStorage.validCollateralContract(msg.sender), "You are not a valid Collateral Contract.");
         _;
     }
 
     function addToken (address _tokenAddress, string memory _tokenName) public onlyOwner {
-        acceptedTokens.push(_tokenAddress);
-        tokenNames[acceptedTokens.length.sub(1)] = _tokenName;
+        contractStorage.acceptedTokens.push(_tokenAddress);
+        contractStorage.tokenNames[contractStorage.acceptedTokens.length.sub(1)] = _tokenName;
         bytes memory bytesName = bytes(_tokenName);
         bytes32 key = keccak256(bytesName);
-        tokenIndexLookUp[key] = acceptedTokens.length.sub(1);
+        contractStorage.tokenIndexLookUp[key] = contractStorage.acceptedTokens.length.sub(1);
     } 
 
     function removeToken (uint _tokenIndex) public onlyOwner {
-        removedTokens[_tokenIndex] = true;
+        contractStorage.removedTokens[_tokenIndex] = true;
     }
 
     function lookUpTokenIndex (string memory _tokenName) public view returns(uint) {
         bytes memory bytesName = bytes(_tokenName);
         bytes32 key = keccak256(bytesName);
-        return tokenIndexLookUp[key];
+        return contractStorage.tokenIndexLookUp[key];
     }
 
     function updateAllTotalTokenBalances () public {
-        for (uint i = 0; i < acceptedTokens.length; i = i.add(1)) {
-            if (!removedTokens[i]) {
-                totalTokenBalances[i] = ERC20Interface(acceptedTokens[i]).balanceOf(address(this));
+        for (uint i = 0; i < contractStorage.acceptedTokens.length; i = i.add(1)) {
+            if (!contractStorage.removedTokens[i]) {
+                contractStorage.totalTokenBalances[i] = ERC20Interface(contractStorage.acceptedTokens[i]).balanceOf(address(this));
             }
         }
     }
 
     function updateUserBalances(uint _token, uint _balance, address _user) public OnlyCollateralContract {
-        userTokenBalances[_token][_user] = _balance;
+        contractStorage.userTokenBalances[_token][_user] = _balance;
     }
 
     function sendStuckTokens (address _user, uint _token, uint _amount) public onlyOwner {
-        ERC20Interface(acceptedTokens[_token]).transfer(_user, _amount);
+        ERC20Interface(contractStorage.acceptedTokens[_token]).transfer(_user, _amount);
+    }
+}
+
+
+// ----------------------------------------------------------------------------
+// TokenLoan (Storage) Contract.
+// 
+// ----------------------------------------------------------------------------
+contract TokenLoanStorage {
+    using SafeMath for uint;
+
+    address public owner;
+    address payable logicContract;
+    address[] previousLogicContracts;
+    uint loanID;
+
+    struct Loan {
+        address payable collateralOwner;
+        address collateralAddress;
+        uint loanType;
+        uint loanAmount;
+        uint[] tokens;
+        mapping(uint => uint) tokenBalances;
+    }
+
+    address[] public acceptedTokens;
+    address[] openCollateralContracts;
+    mapping(address => bool) public validCollateralContract;
+    mapping(uint => bool) removedTokens;
+    mapping(uint => string) tokenNames;
+    mapping(bytes32 => uint) tokenIndexLookUp;
+    mapping(uint => mapping(address => uint)) userTokenBalances;
+    mapping(uint => uint) totalTokenBalances;
+
+    constructor (address payable _logicContract) public {
+        owner = msg.sender;
+        logicContract = _logicContract;
+    }
+
+    modifier onlyOwner {
+        require(msg.sender == owner, "You are not the contract owner.");
+        _;
+    }
+
+    modifier OnlyLogicContract {
+        require(msg.sender == logicContract, "You are not a valid TokenLoan logic contract.");
+        _;
+    }
+
+    function updateLogic (address payable _logicContract) public onlyOwner {
+        previousLogicContracts.push(logicContract);
+        logicContract = _logicContract;
     }
 }
 
