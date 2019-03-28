@@ -76,45 +76,49 @@ contract TokenLoan {
         return contractStorage.tokenIndexLookUp(key);
     }
 
-    function createCollateralContract (uint[] calldata _tokens) external {
-        Collateral newCollateralContract = new Collateral(_tokens, msg.sender, address(this));
+    function createCollateralContract (uint[] calldata _tokens) external returns (address) {
+        Collateral newCollateralContract = new Collateral(_tokens, msg.sender, address(this), storageContract);
         contractStorage.incrementLoanID();
-        contractStorage.updateLoan(contractStorage.loanID(), msg.sender, newCollateralContract, true, 0, 0, _tokens);
-        contractStorage.setValidCollateralContract(newCollateralContract, true);
+        contractStorage.updateLoan(contractStorage.loanID(), msg.sender, address(newCollateralContract), true, 0, 0, _tokens);
+        contractStorage.setValidCollateralContract(address(newCollateralContract), true);
+        contractStorage.updateLoanIndexLookUp(address(newCollateralContract), contractStorage.loanID());
+        return address(newCollateralContract);
     }
 
     function updateUserBalances(uint _token, uint _balance) external OnlyCollateralContract {
-        contractStorage.userTokenBalances[_token][_balance] = _balance;
+        contractStorage.updateLoanTokenBalance(contractStorage.loanIndexLookUp(msg.sender), _token, _balance);
     }
 
     function closeAuction (uint _lotNumber) external {
-        address payable lotWinner = auction.auctions(_lotNumber).highestBid.bidder;
-        address collateral = auction.auctions(_lotNumber).tokenLot;
+        
+        address lotWinner = auction.winningBidder(_lotNumber);
+        address collateral = auction.tokenLot(_lotNumber);
         auction.executePayment(_lotNumber);
         Collateral(collateral).sendAuctionWinner(lotWinner);
     }
 
     function startAuction(uint _loanID) internal {
-        auction.createNewAuction(contractStorage.loans(_loanID).collateralAddress, block.number + 60);
+        auction.createNewAuction(contractStorage.loanCollateralAddress(_loanID), block.number + 60);
         contractStorage.updateLoan(
             _loanID,
-            contractStorage.loans(_loanID).collateralOwner,
-            contractStorage.loans(_loanID).collateralAddress,
+            contractStorage.loanCollateralOwner(_loanID),
+            contractStorage.loanCollateralAddress(_loanID),
             false,
-            contractStorage.loans(_loanID).loanType,
-            contractStorage.loans(_loanID).loanAmount,
-            contractStorage.loans(_loanID).tokens
+            contractStorage.loanType(_loanID),
+            contractStorage.loanAmount(_loanID),
+            contractStorage.loanTokens(_loanID)
         );
     }
 
-
-
-
-
+    // Dummy function, replace with an oracle. 
+    function checkLoan (uint _loanID) external {
+        // Query oracle. Assume loan is bad.
+        startAuction(_loanID);
+    }
 
 
     function sendStuckTokens (address _user, uint _token, uint _amount) external onlyOwner {
-        ERC20Interface(contractStorage.acceptedTokens[_token]).transfer(_user, _amount);
+        ERC20Interface(contractStorage.acceptedTokens(_token)).transfer(_user, _amount);
     }
 }
 
@@ -148,6 +152,13 @@ contract TokenLoanStorage {
     mapping(uint => uint) public totalTokenBalances;
     mapping(address => bool) public validCollateralContract;
     mapping(uint => Loan) public loans;
+    mapping(address => uint) public loanIndexLookUp;
+
+    // Additional Mappings if required in the future:
+    mapping(bytes32 => bytes) public ownerMapping;
+    mapping(bytes32 => bytes) public logicMapping;
+    mapping(bytes32 => bytes) public collateralMapping;
+
 
     constructor (address payable _logicContract) public {
         owner = msg.sender;
@@ -205,7 +216,7 @@ contract TokenLoanStorage {
         loans[_loanID].tokenBalances[_token] = _balance;
     }
 
-    function updateLoan(uint _loanID, address payable _collateralOwner, address _collateralAddress, bool _open, uint _loanType, uint _loanAmount, uint[] _tokens) external onlyLogicContract {
+    function updateLoan(uint _loanID, address payable _collateralOwner, address _collateralAddress, bool _open, uint _loanType, uint _loanAmount, uint[] calldata _tokens) external onlyLogicContract {
         loans[_loanID].collateralOwner = _collateralOwner;
         loans[_loanID].collateralAddress = _collateralAddress;
         loans[_loanID].open = _open;
@@ -217,7 +228,47 @@ contract TokenLoanStorage {
     function updateTotalTokenBalances (uint _token, uint _balance) external onlyLogicContract {
         totalTokenBalances[_token] = _balance;
     }
+    
+    function updateLoanIndexLookUp (address _address, uint _loanID) external onlyLogicContract {
+        loanIndexLookUp[_address] = _loanID;
+    }
 
+    // Setters for future mappings if required:
+    function updateOwnerMapping (bytes32 _key, bytes calldata _value) external onlyOwner {
+        ownerMapping[_key] = _value;
+    }
+
+    function updateLogicMapping (bytes32 _key, bytes calldata _value) external onlyLogicContract {
+        logicMapping[_key] = _value;
+    }
+
+    function updateCollateralMapping (bytes32 _key, bytes calldata _value) external onlyCollateralContract {
+        collateralMapping[_key] = _value;
+    }
+    
+    function loanCollateralAddress(uint _loanID) external view returns (address) {
+        return loans[_loanID].collateralAddress;
+    }
+    
+    function loanCollateralOwner(uint _loanID) external view returns (address payable) {
+        return loans[_loanID].collateralOwner;
+    }
+    
+    function loanOpen(uint _loanID) external view returns (bool) {
+        return loans[_loanID].open;
+    }
+    
+    function loanType(uint _loanID) external view returns (uint) {
+        return loans[_loanID].loanType;
+    }
+    
+    function loanAmount(uint _loanID) external view returns (uint) {
+        return loans[_loanID].loanAmount;
+    }
+    
+    function loanTokens(uint _loanID) external view returns (uint[] memory) {
+        return loans[_loanID].tokens;
+    }
 
 }
 
@@ -233,6 +284,7 @@ contract Collateral {
 
     address payable user;
     address tokenLoanContract;
+    address storageContract;
     uint[] expectedTokens;
 
     modifier onlyTokenLoan {
@@ -241,9 +293,10 @@ contract Collateral {
     }
 
 
-    constructor (uint[] memory _tokens, address payable _user, address _tokenLoanContract) public {
+    constructor (uint[] memory _tokens, address payable _user, address _tokenLoanContract, address _storageContract) public {
         user = _user;
         tokenLoanContract = _tokenLoanContract;
+        storageContract = _storageContract;
         for (uint i = 0; i < _tokens.length; i = i.add(1)) {
             expectedTokens.push(_tokens[i]);
         }
@@ -252,25 +305,24 @@ contract Collateral {
     function updateUserBalance() external {
         for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
             TokenLoan(tokenLoanContract).updateUserBalances(expectedTokens[i], 
-                ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this)), 
-                user);
+                ERC20Interface(TokenLoanStorage(storageContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this)));
         }
     }
 
     function sendBack() external onlyTokenLoan {
         for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
-            uint balance = ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
+            uint balance = ERC20Interface(TokenLoanStorage(storageContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
             if (balance > 0) {
-                ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).transfer(user, balance);
+                ERC20Interface(TokenLoanStorage(storageContract).acceptedTokens(expectedTokens[i])).transfer(user, balance);
             }
         }
     }
 
     function sendAuctionWinner(address _winner) external onlyTokenLoan {
         for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
-            uint balance = ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
+            uint balance = ERC20Interface(TokenLoanStorage(storageContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
             if (balance > 0) {
-                ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).transfer(_winner, balance);
+                ERC20Interface(TokenLoanStorage(storageContract).acceptedTokens(expectedTokens[i])).transfer(_winner, balance);
             }
         }
     }
@@ -301,7 +353,7 @@ contract Auction {
         Bid nextHighestBid;
     }
 
-    mapping(uint => AuctionStruct) public auctions;
+    mapping(uint => AuctionStruct) auctions;
     
     constructor(address payable _tokenLoanContract, uint _softClose) public {
         tokenLoanContract = _tokenLoanContract;
@@ -345,6 +397,10 @@ contract Auction {
     
     function winningBidder(uint _lotNumber) external view returns (address) {
         return auctions[_lotNumber].highestBid.bidder;
+    }
+    
+    function tokenLot(uint _lotNumber) external view returns (address) {
+        return auctions[_lotNumber].tokenLot;
     }
 
     function executePayment(uint _lotNumber) onlyTokenLoan external {
