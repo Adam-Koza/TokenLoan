@@ -47,13 +47,17 @@ contract TokenLoan {
 
     address public owner;
     address payable public storageContract;
+    address public auctionContract;
     TokenLoanStorage contractStorage;
+    Auction auction;
 
 
-    constructor (address payable _storageContract) public {
+    constructor (address payable _storageContract, address _auctionContract) public {
         owner = msg.sender;
         storageContract = _storageContract;
         contractStorage = TokenLoanStorage(storageContract);
+        auctionContract = _auctionContract;
+        auction = Auction(auctionContract);
     }
 
     modifier onlyOwner {
@@ -66,37 +70,50 @@ contract TokenLoan {
         _;
     }
 
-    function addToken (address _tokenAddress, string memory _tokenName) public onlyOwner {
-        contractStorage.acceptedTokens.push(_tokenAddress);
-        contractStorage.tokenNames[contractStorage.acceptedTokens.length.sub(1)] = _tokenName;
+    function lookUpTokenIndex (string calldata _tokenName) external view returns (uint) {
         bytes memory bytesName = bytes(_tokenName);
         bytes32 key = keccak256(bytesName);
-        contractStorage.tokenIndexLookUp[key] = contractStorage.acceptedTokens.length.sub(1);
-    } 
-
-    function removeToken (uint _tokenIndex) public onlyOwner {
-        contractStorage.removedTokens[_tokenIndex] = true;
+        return contractStorage.tokenIndexLookUp(key);
     }
 
-    function lookUpTokenIndex (string memory _tokenName) public view returns(uint) {
-        bytes memory bytesName = bytes(_tokenName);
-        bytes32 key = keccak256(bytesName);
-        return contractStorage.tokenIndexLookUp[key];
+    function createCollateralContract (uint[] calldata _tokens) external {
+        Collateral newCollateralContract = new Collateral(_tokens, msg.sender, address(this));
+        contractStorage.incrementLoanID();
+        contractStorage.updateLoan(contractStorage.loanID(), msg.sender, newCollateralContract, true, 0, 0, _tokens);
+        contractStorage.setValidCollateralContract(newCollateralContract, true);
     }
 
-    function updateAllTotalTokenBalances () public {
-        for (uint i = 0; i < contractStorage.acceptedTokens.length; i = i.add(1)) {
-            if (!contractStorage.removedTokens[i]) {
-                contractStorage.totalTokenBalances[i] = ERC20Interface(contractStorage.acceptedTokens[i]).balanceOf(address(this));
-            }
-        }
+    function updateUserBalances(uint _token, uint _balance) external OnlyCollateralContract {
+        contractStorage.userTokenBalances[_token][_balance] = _balance;
     }
 
-    function updateUserBalances(uint _token, uint _balance, address _user) public OnlyCollateralContract {
-        contractStorage.userTokenBalances[_token][_user] = _balance;
+    function closeAuction (uint _lotNumber) external {
+        address payable lotWinner = auction.auctions(_lotNumber).highestBid.bidder;
+        address collateral = auction.auctions(_lotNumber).tokenLot;
+        auction.executePayment(_lotNumber);
+        Collateral(collateral).sendAuctionWinner(lotWinner);
     }
 
-    function sendStuckTokens (address _user, uint _token, uint _amount) public onlyOwner {
+    function startAuction(uint _loanID) internal {
+        auction.createNewAuction(contractStorage.loans(_loanID).collateralAddress, block.number + 60);
+        contractStorage.updateLoan(
+            _loanID,
+            contractStorage.loans(_loanID).collateralOwner,
+            contractStorage.loans(_loanID).collateralAddress,
+            false,
+            contractStorage.loans(_loanID).loanType,
+            contractStorage.loans(_loanID).loanAmount,
+            contractStorage.loans(_loanID).tokens
+        );
+    }
+
+
+
+
+
+
+
+    function sendStuckTokens (address _user, uint _token, uint _amount) external onlyOwner {
         ERC20Interface(contractStorage.acceptedTokens[_token]).transfer(_user, _amount);
     }
 }
@@ -111,12 +128,13 @@ contract TokenLoanStorage {
 
     address public owner;
     address payable logicContract;
-    address[] previousLogicContracts;
-    uint loanID;
+    address[] public previousLogicContracts;
+    uint public loanID;
 
     struct Loan {
         address payable collateralOwner;
         address collateralAddress;
+        bool open;
         uint loanType;
         uint loanAmount;
         uint[] tokens;
@@ -124,13 +142,12 @@ contract TokenLoanStorage {
     }
 
     address[] public acceptedTokens;
-    address[] openCollateralContracts;
+    mapping(uint => bool) public removedTokens;
+    mapping(uint => string) public tokenNames;
+    mapping(bytes32 => uint) public tokenIndexLookUp;
+    mapping(uint => uint) public totalTokenBalances;
     mapping(address => bool) public validCollateralContract;
-    mapping(uint => bool) removedTokens;
-    mapping(uint => string) tokenNames;
-    mapping(bytes32 => uint) tokenIndexLookUp;
-    mapping(uint => mapping(address => uint)) userTokenBalances;
-    mapping(uint => uint) totalTokenBalances;
+    mapping(uint => Loan) public loans;
 
     constructor (address payable _logicContract) public {
         owner = msg.sender;
@@ -142,15 +159,66 @@ contract TokenLoanStorage {
         _;
     }
 
-    modifier OnlyLogicContract {
+    modifier onlyLogicContract {
         require(msg.sender == logicContract, "You are not a valid TokenLoan logic contract.");
         _;
     }
 
-    function updateLogic (address payable _logicContract) public onlyOwner {
+    modifier onlyCollateralContract {
+        require(validCollateralContract[msg.sender], "You are not a valid Collateral contract.");
+        _;
+    }
+
+    function updateLogicContract (address payable _logicContract) external onlyOwner {
         previousLogicContracts.push(logicContract);
         logicContract = _logicContract;
     }
+
+    function addToken (address _tokenAddress, string calldata _tokenName) external onlyOwner {
+        acceptedTokens.push(_tokenAddress);
+        tokenNames[acceptedTokens.length.sub(1)] = _tokenName;
+        bytes memory bytesName = bytes(_tokenName);
+        bytes32 key = keccak256(bytesName);
+        tokenIndexLookUp[key] = acceptedTokens.length.sub(1);
+    } 
+
+    function removeToken (uint _tokenIndex) external onlyOwner {
+        removedTokens[_tokenIndex] = true;
+    }
+
+    function setTokenName (uint _token, string calldata _name) external onlyOwner {
+        tokenNames[_token] = _name;
+        bytes memory bytesName = bytes(_name);
+        bytes32 key = keccak256(bytesName);
+        tokenIndexLookUp[key] = _token;
+    }
+
+    function incrementLoanID() external onlyLogicContract {
+        loanID = loanID.add(1);
+    }
+
+    function setValidCollateralContract (address _collateralContract, bool _value) external onlyLogicContract {
+        validCollateralContract[_collateralContract] = _value;
+    }
+
+    function updateLoanTokenBalance(uint _loanID, uint _token, uint _balance) external onlyLogicContract {
+        loans[_loanID].tokenBalances[_token] = _balance;
+    }
+
+    function updateLoan(uint _loanID, address payable _collateralOwner, address _collateralAddress, bool _open, uint _loanType, uint _loanAmount, uint[] _tokens) external onlyLogicContract {
+        loans[_loanID].collateralOwner = _collateralOwner;
+        loans[_loanID].collateralAddress = _collateralAddress;
+        loans[_loanID].open = _open;
+        loans[_loanID].loanType = _loanType;
+        loans[_loanID].loanAmount = _loanAmount;
+        loans[_loanID].tokens = _tokens;
+    }
+
+    function updateTotalTokenBalances (uint _token, uint _balance) external onlyLogicContract {
+        totalTokenBalances[_token] = _balance;
+    }
+
+
 }
 
 
@@ -181,7 +249,7 @@ contract Collateral {
         }
     }
 
-    function updateUserBalance() public {
+    function updateUserBalance() external {
         for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
             TokenLoan(tokenLoanContract).updateUserBalances(expectedTokens[i], 
                 ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this)), 
@@ -189,7 +257,7 @@ contract Collateral {
         }
     }
 
-    function sendBack() public onlyTokenLoan {
+    function sendBack() external onlyTokenLoan {
         for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
             uint balance = ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
             if (balance > 0) {
@@ -198,7 +266,7 @@ contract Collateral {
         }
     }
 
-    function sendAuctionWinner(address _winner) public onlyTokenLoan {
+    function sendAuctionWinner(address _winner) external onlyTokenLoan {
         for (uint i = 0; i < expectedTokens.length; i = i.add(1)) {
             uint balance = ERC20Interface(TokenLoan(tokenLoanContract).acceptedTokens(expectedTokens[i])).balanceOf(address(this));
             if (balance > 0) {
@@ -233,16 +301,16 @@ contract Auction {
         Bid nextHighestBid;
     }
 
-    modifier onlyTokenLoan {
-        require(msg.sender == tokenLoanContract, "You are not the TokenLoan Contract.");
-        _;
-    }
-    
-    mapping(uint => AuctionStruct) auctions;
+    mapping(uint => AuctionStruct) public auctions;
     
     constructor(address payable _tokenLoanContract, uint _softClose) public {
         tokenLoanContract = _tokenLoanContract;
         softClose = _softClose;
+    }
+
+    modifier onlyTokenLoan {
+        require(msg.sender == tokenLoanContract, "You are not the TokenLoan Contract.");
+        _;
     }
 
     function createNewAuction(address _tokenLot, uint _expiryBlockHeight) onlyTokenLoan external {
@@ -268,14 +336,14 @@ contract Auction {
         }
     }
     
-    function twoHightestBidsDifference(uint _lotNumber) public view returns(uint) {
+    function twoHightestBidsDifference(uint _lotNumber) external view returns(uint) {
         if (auctions[_lotNumber].highestBid.value != 0) {
             return (auctions[_lotNumber].highestBid.value - auctions[_lotNumber].nextHighestBid.value);
         }
         return 0;
     }
     
-    function winningBidder(uint _lotNumber) public view returns (address) {
+    function winningBidder(uint _lotNumber) external view returns (address) {
         return auctions[_lotNumber].highestBid.bidder;
     }
 
