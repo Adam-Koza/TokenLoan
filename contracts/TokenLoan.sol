@@ -90,7 +90,6 @@ contract TokenLoan {
     }
 
     function closeAuction (uint _lotNumber) external {
-        
         address lotWinner = auction.winningBidder(_lotNumber);
         address collateral = auction.tokenLot(_lotNumber);
         auction.executePayment(_lotNumber);
