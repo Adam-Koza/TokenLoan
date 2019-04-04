@@ -10,9 +10,9 @@ import "./Collateral.sol";
 contract Auction {
     using SafeMath for uint;
 
-    address payable tokenLoanContract;
-    uint lotNumber;
-    uint softClose;
+    address payable public tokenLoanContract;
+    uint public lotNumber;
+    uint public softClose;
     
     struct Bid {
       address payable bidder;
@@ -48,7 +48,9 @@ contract Auction {
         if (msg.value > auctions[_lotNumber].highestBid.value) {
             auctions[_lotNumber].nextHighestBid = auctions[_lotNumber].highestBid;
             auctions[_lotNumber].highestBid = Bid({bidder: msg.sender, value: msg.value});
-            auctions[_lotNumber].nextHighestBid.bidder.transfer(auctions[_lotNumber].nextHighestBid.value);
+            if (auctions[_lotNumber].nextHighestBid.value > 0) {
+                auctions[_lotNumber].nextHighestBid.bidder.transfer(auctions[_lotNumber].nextHighestBid.value);
+            }
             
             // Extend auction if a new highest bid is received under ~3 minutes before auction closes.
             // This is called a "soft close" auction. It disincentivizes bidders from only bidding at the last second.

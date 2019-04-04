@@ -83,13 +83,13 @@ contract("TokenLoan", accounts => {
         await shouldFail.reverting(TokenLoanInstance.sendStuckTokens(nonOwner, 0, 0, { from: nonOwner }));
     });
 
-    // it("Should allow collateral contract to call functions with the OnlyCollateralContract modifier.", async () => {
-    //     const newUser = accounts[2];
-    //     let returned = await TokenLoanInstance.createCollateralContract([0], { from: newUser });
-    //     CollateralInstance = await Collateral.at(returned.logs[0].args._newAddress);
-    //     await CollateralInstance.updateUserBalance();
-    //     assert.equal(0, 0);
-    // });
+    it("Should allow collateral contract to call functions with the OnlyCollateralContract modifier.", async () => {
+        const newUser = accounts[2];
+        let returned = await TokenLoanInstance.createCollateralContract([], { from: newUser });
+        CollateralInstance = await Collateral.at(returned.logs[0].args._newAddress);
+        await CollateralInstance.updateUserBalance();
+        assert.equal(0, 0);
+    });
 
     it("Should fail if a non-collateral contract calls functions with the OnlyCollateralContract modifier.", async () => {
         const nonContract = accounts[1];
@@ -169,30 +169,162 @@ contract("TokenLoan", accounts => {
     ////////////////////////////////////////
 
 
-    // it("Should create a new auction lot if loan is bad.", async () => {
-    //     console.log("");
-    //     console.log("startAuction:");
-    //     const newUser = accounts[2];
+    it("Should create a new auction lot if loan is bad.", async () => {
+        console.log("");
+        console.log("checkLoan:");
+        const newUser = accounts[2];
 
-    //     let returned = await TokenLoanInstance.createCollateralContract([0], { from: newUser });
-    //     CollateralInstance = await Collateral.at(returned.logs[0].args._newAddress);
-    //     assert.equal(await CollateralInstance.user(), newUser);
-    // });
+        let auctionID = await AuctionInstance.lotNumber();
+        let loanID = await TokenLoanStorageInstance.loanID();
+        await TokenLoanInstance.checkLoan(loanID, true, { from: newUser });
+        assert.equal(await AuctionInstance.lotNumber() == auctionID, false);
+    });
 
-    // it("Should send coins back to collateral owner is loan is good.", async () => {
-    //     console.log("");
-    //     console.log("startAuction:");
-    //     const newUser = accounts[2];
-
-    //     let returned = await TokenLoanInstance.createCollateralContract([0], { from: newUser });
-    //     CollateralInstance = await Collateral.at(returned.logs[0].args._newAddress);
-    //     assert.equal(await CollateralInstance.user(), newUser);
-    // });
-
-
-
-
-
+    it("Should send coins back to collateral owner is loan is good.", async () => {
+        const newUser = accounts[4];
+        await TokenLoanInstance.createCollateralContract([], { from: newUser });
+        let tx = await TokenLoanInstance.checkLoan(await TokenLoanStorageInstance.loanID(), false, { from: newUser });
+        assert.equal(tx.receipt.rawLogs.length > 0, true);
+    });
 });
 
 
+
+
+
+
+contract("Auction", accounts => {
+
+    before(async function () {
+        TokenLoanStorageInstance = await TokenLoanStorage.deployed();
+        TokenLoanInstance = await TokenLoan.deployed();
+        AuctionInstance = await Auction.deployed();
+        // Add Logic Contract to Storage Contract.
+        await TokenLoanStorageInstance.updateLogicContract(TokenLoanInstance.address);
+        console.log("");
+        console.log("Contructor:");
+    });
+
+
+    after("write coverage/profiler output", async () => {
+        if (mode === "profile") {
+            await global.profilerSubprovider.writeProfilerOutputAsync();
+        } else if (mode === "coverage") {
+            await global.coverageSubprovider.writeCoverageAsync();
+        }
+    });
+
+
+    ////////////////////////////////////////
+    //
+    //          CONSTRUCTOR:
+    //
+    ////////////////////////////////////////
+
+
+    it("should set TokenLoan contract correctly.", async () => {
+        const owner = accounts[0];
+        if (mode === "profile") {
+            global.profilerSubprovider.start();
+        }
+
+        assert.equal(await AuctionInstance.tokenLoanContract(), TokenLoanInstance.address);
+        if (mode === "profile") {
+            global.profilerSubprovider.stop();
+        }
+    });
+
+    it("Should set soft close correctly.", async () => {
+        assert.equal(await AuctionInstance.softClose(), 0);
+    });
+
+
+    ////////////////////////////////////////
+    // 
+    //          MODIFIERS:
+    //
+    ////////////////////////////////////////
+
+
+    it("Should allow TokenLoan contract to call functions with the onlyTokenLoan modifier.", async () => {
+        console.log("");
+        console.log("Modifiers:");
+        const newUser = accounts[5];
+
+        let auctionID = await AuctionInstance.lotNumber();
+        let loanID = await TokenLoanStorageInstance.loanID();
+        await TokenLoanInstance.checkLoan(loanID, true, { from: newUser });
+        assert.equal(await AuctionInstance.lotNumber() == auctionID, false);
+    });
+
+
+    it("Should fail if a non-contract calls functions with the onlyTokenLoan modifier.", async () => {
+        const nonContract = accounts[5];
+
+        await shouldFail.reverting(AuctionInstance.createNewAuction(AuctionInstance.address, 5, { from: nonContract }));
+    });
+
+
+    ////////////////////////////////////////
+    // 
+    //          submitBid:
+    //
+    ////////////////////////////////////////
+
+
+    it("Should submit bid on tokenLot.", async () => {
+        console.log("");
+        console.log("submitBid:");
+        const newUser = accounts[5];
+        await AuctionInstance.submitBid(1, { from: newUser, value: 1000 });
+        assert.equal(await AuctionInstance.twoHightestBidsDifference(1) == 1000, true);
+    });
+
+    it("Should submit higher bid on tokenLot.", async () => {
+        const newUser = accounts[6];
+        await AuctionInstance.submitBid(1, { from: newUser, value: 1001 });
+        assert.equal(await AuctionInstance.twoHightestBidsDifference(1) == 1, true);
+    });
+
+    it("Should not submit lower bid on tokenLot.", async () => {
+        const newUser = accounts[6];
+        await AuctionInstance.submitBid(1, { from: newUser, value: 900 });
+        assert.equal(await AuctionInstance.twoHightestBidsDifference(1) == 1, true);
+    });
+
+
+    ////////////////////////////////////////
+    // 
+    //          winningBidder:
+    //
+    ////////////////////////////////////////
+
+
+    it("Should return winning bidder.", async () => {
+        console.log("");
+        console.log("winningBidder:");
+        const winner= accounts[6];
+        await AuctionInstance.winningBidder(1);
+        assert.equal(await AuctionInstance.winningBidder(1), winner);
+    });
+
+
+    // ////////////////////////////////////////
+    // // 
+    // //          createNewAuction:
+    // //
+    // ////////////////////////////////////////
+
+
+    // it("Should create a new auction.", async () => {
+    //     console.log("");
+    //     console.log("createNewAuction:");
+    //     const newUser = accounts[5];
+
+    //     let auctionID = await AuctionInstance.lotNumber();
+    //     await TokenLoanInstance.checkLoan(3, true, { from: newUser });
+    //     assert.equal(await AuctionInstance.lotNumber() == auctionID, false);
+    // });
+
+
+});

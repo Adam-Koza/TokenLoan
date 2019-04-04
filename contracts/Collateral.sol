@@ -13,6 +13,8 @@ import "./ERC20Interface.sol";
 contract Collateral {
     using SafeMath for uint;
 
+    event CollateralReturned(address _to, uint256 _timestamp);
+
     address payable public user;
     address tokenLoanContract;
     address auctionContract;
@@ -54,6 +56,7 @@ contract Collateral {
                 ERC20Interface(TokenLoanStorage(storageContract).acceptedTokens(expectedTokens[i])).transfer(user, balance);
             }
         }
+        emit CollateralReturned(user, now);
     }
 
     function sendAuctionWinner(address _winner) external onlyAuction {
