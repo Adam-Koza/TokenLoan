@@ -21,5 +21,8 @@
   "homepage": "https://github.com/Adam-Koza/TokenLoan#readme",
   "devDependencies": {
     "solidity-coverage": "^0.5.11"
+  },
+  "dependencies": {
+    "openzeppelin-test-helpers": "^0.3.1"
   }
 }
