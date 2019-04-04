@@ -13,6 +13,8 @@ import "./Auction.sol";
 contract TokenLoan {
     using SafeMath for uint;
 
+    event NewCollateralAddress(address _newAddress, address _by, uint256 _timestamp);
+
     address public owner;
     address payable public storageContract;
     address public auctionContract;
@@ -20,12 +22,10 @@ contract TokenLoan {
     Auction auction;
 
 
-    constructor (address payable _storageContract, address _auctionContract) public {
+    constructor (address payable _storageContract) public {
         owner = msg.sender;
         storageContract = _storageContract;
         contractStorage = TokenLoanStorage(storageContract);
-        auctionContract = _auctionContract;
-        auction = Auction(auctionContract);
     }
 
     modifier onlyOwner {
@@ -38,10 +38,9 @@ contract TokenLoan {
         _;
     }
 
-    function lookUpTokenIndex (string calldata _tokenName) external view returns (uint) {
-        bytes memory bytesName = bytes(_tokenName);
-        bytes32 key = keccak256(bytesName);
-        return contractStorage.tokenIndexLookUp(key);
+    function setAuctionContract (address _auctionContract ) external onlyOwner {
+        auctionContract = _auctionContract;
+        auction = Auction(auctionContract);
     }
 
     function createCollateralContract (uint[] calldata _tokens) external returns (address) {
@@ -50,6 +49,7 @@ contract TokenLoan {
         contractStorage.updateLoan(contractStorage.loanID(), msg.sender, address(newCollateralContract), true, 0, 0, _tokens);
         contractStorage.setValidCollateralContract(address(newCollateralContract), true);
         contractStorage.updateLoanIndexLookUp(address(newCollateralContract), contractStorage.loanID());
+        emit NewCollateralAddress(address(newCollateralContract), msg.sender, now);
         return address(newCollateralContract);
     }
 
@@ -86,6 +86,12 @@ contract TokenLoan {
         // Loan is good, send the Collateral back to it's owner.
             Collateral(contractStorage.loanCollateralAddress(_loanID)).sendBack();
         }
+    }
+
+    function lookUpTokenIndex (string calldata _tokenName) external view returns (uint) {
+        bytes memory bytesName = bytes(_tokenName);
+        bytes32 key = keccak256(bytesName);
+        return contractStorage.tokenIndexLookUp(key);
     }
 
 

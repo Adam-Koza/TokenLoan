@@ -13,7 +13,7 @@ import "./ERC20Interface.sol";
 contract Collateral {
     using SafeMath for uint;
 
-    address payable user;
+    address payable public user;
     address tokenLoanContract;
     address auctionContract;
     address storageContract;

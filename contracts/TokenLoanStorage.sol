@@ -40,9 +40,8 @@ contract TokenLoanStorage {
     mapping(bytes32 => bytes) public collateralMapping;
 
 
-    constructor (address payable _logicContract) public {
+    constructor () public {
         owner = msg.sender;
-        logicContract = _logicContract;
     }
 
     modifier onlyOwner {
