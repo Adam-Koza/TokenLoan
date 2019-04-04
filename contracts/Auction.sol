@@ -1,7 +1,8 @@
-pragma solidity 0.5.6;
+pragma solidity 0.5.0;
 
-import "./SafeMath.sol";
+
 import "./Collateral.sol";
+import "./SafeMath.sol";
 
 // ----------------------------------------------------------------------------
 // Collateral Auction Contract.

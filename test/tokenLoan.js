@@ -303,7 +303,7 @@ contract("Auction", accounts => {
     it("Should return winning bidder.", async () => {
         console.log("");
         console.log("winningBidder:");
-        const winner= accounts[6];
+        const winner = accounts[6];
         await AuctionInstance.winningBidder(1);
         assert.equal(await AuctionInstance.winningBidder(1), winner);
     });

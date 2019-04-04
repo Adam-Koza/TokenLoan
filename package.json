@@ -1,0 +1,25 @@
+{
+  "name": "tokenloan",
+  "version": "1.0.0",
+  "description": "Decentralised Lending and Margin Trading",
+  "main": "truffle-config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Adam-Koza/TokenLoan.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Adam-Koza/TokenLoan/issues"
+  },
+  "homepage": "https://github.com/Adam-Koza/TokenLoan#readme",
+  "devDependencies": {
+    "solidity-coverage": "^0.5.11"
+  }
+}
