@@ -2,10 +2,23 @@
 Decentralised Lending and Margin Trading
 
 
+White Paper: https://drive.google.com/file/d/1m2lsqFRdKaCZgyksBAXiCHQ1H5mE7Dr6/view?usp=drivesdk
+
+
+
+
+
+
+
 
 Upgrade Strategy: 
 
 Logic -> Storage
+
+
+
+
+
 
 
 
