@@ -1,0 +1,16 @@
+User->TokenLoan: createCollateralContract (expectedTokens[])
+TokenLoan->Storage: updateLoan (NewCollateralContract, User)
+TokenLoan-->User: NewCollateralContract
+User->NewCollateralContract: DepositTokens
+NewCollateralContract->TokenLoan: UpdateBalances
+TokenLoan->Storage: UpdateBalance
+User->TokenLoan: RequestLoan (amount)
+TokenLoan->Oracle: TokenValue ()
+Oracle-->TokenLoan: Value()
+TokenLoan->TokenLoan: Is Amount:Collateral Ratio Acceptable?
+TokenLoan-->User: TransferAmount ()
+User->TokenLoan: PayBackLoan ()
+TokenLoan->Storage: CheckLoan ()
+Storage-->TokenLoan: Debt()
+TokenLoan->TokenLoan: Is Debt Paid?
+TokenLoan-->User: SendBackCollateral ()
