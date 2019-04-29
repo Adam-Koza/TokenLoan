@@ -11,3 +11,4 @@ before_script:
 script:
   - php artisan key:generate
   - php artisan migrate
+  - yes
