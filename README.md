@@ -11,18 +11,30 @@ White Paper: https://drive.google.com/file/d/1m2lsqFRdKaCZgyksBAXiCHQ1H5mE7Dr6/v
 
 
 
-Upgrade Strategy: 
+## Upgrade Strategy
 
-Logic -> Storage
-
-
+Logic contract interacts with  a storage contract, logic contract can be upgraded. 
 
 
+## Project Managment
+
+Trello Board: https://trello.com/b/pBwGWKFa/tokenloan
+
+
+## Install Client
+```
+cd client
+curl -sS https://getcomposer.org/installer | sudo php -- --install-dir=/usr/local/bin --filename=composer
+composer install
+php artisan key:generate
+php artisan migrate
+php artisan serve
+```
+go to localhost:8000
 
 
 
-
-Deployed on Ropsten
+## Deployed on Ropsten 
 
 SafeMath: 0x17e4bd760f9b3d1bc81e7c1169ddc67c0061e013
 
